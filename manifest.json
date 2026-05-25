@@ -1,6 +1,6 @@
 {
-  "name": "FinControl — Finanzas personales",
-  "short_name": "FinControl",
+  "name": "Thoth — Finanzas personales",
+  "short_name": "Thoth",
   "description": "Controla tus gastos, presupuesto y ahorro personal",
   "start_url": "./index.html",
   "display": "standalone",

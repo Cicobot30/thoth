@@ -1,7 +1,7 @@
-// FinControl — Service Worker
+// Thoth — Service Worker
 // Permite usar la app sin conexión a internet
 
-const CACHE = 'fincontrol-v2';
+const CACHE = 'thoth-v1';
 const ASSETS = [
   './',
   './index.html',
