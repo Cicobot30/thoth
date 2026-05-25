@@ -13,6 +13,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FinControl">
 
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
@@ -85,12 +89,17 @@
   .nav-lock-btn:hover { background: var(--bg3); color: var(--text); }
 
   /* NAV */
-  nav { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; height: 60px; position: sticky; top: 0; z-index: 100; gap: 8px; }
-  nav .logo { font-weight: 700; font-size: 1.1rem; color: var(--accent2); margin-right: auto; display: flex; align-items: center; gap: 8px; }
-  nav .logo span { font-size: 1.4rem; }
-  nav button { background: none; border: none; color: var(--text2); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; white-space: nowrap; }
-  nav button:hover { background: var(--bg3); color: var(--text); }
-  nav button.active { background: var(--accent); color: #fff; }
+  nav { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 12px; height: 56px; position: sticky; top: 0; z-index: 100; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  nav .logo { font-weight: 700; font-size: 1rem; color: var(--accent2); margin-right: 6px; display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  nav .logo span { font-size: 1.3rem; }
+  nav .nav-btn { background: none; border: none; color: var(--text2); padding: 7px 11px; border-radius: 8px; cursor: pointer; font-size: 0.82rem; font-weight: 500; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; }
+  nav .nav-btn:hover { background: var(--bg3); color: var(--text); }
+  nav .nav-btn.active { background: var(--accent); color: #fff; }
+  .nav-user { display: flex; align-items: center; gap: 7px; margin-left: auto; flex-shrink: 0; }
+  .nav-user img { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--border); }
+  .nav-user span { font-size: 0.8rem; color: var(--text2); white-space: nowrap; display: none; }
+  @media(min-width:600px) { .nav-user span { display: inline; } }
 
   /* MAIN */
   main { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
@@ -115,7 +124,23 @@
 
   /* GRID 2COL */
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media(max-width: 720px) { .grid2 { grid-template-columns: 1fr; } nav button { padding: 7px 9px; font-size: 0.78rem; } }
+  @media(max-width: 720px) {
+    .grid2 { grid-template-columns: 1fr; }
+    main { padding: 16px 12px; }
+    .cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { padding: 14px 14px; }
+    .card .value { font-size: 1.4rem; }
+    .chart-box { height: 200px; }
+    h2 { font-size: 1.2rem; }
+    .form-row { flex-direction: column; gap: 8px; }
+    .type-toggle { gap: 6px; }
+    table { font-size: 0.8rem; }
+    td, th { padding: 8px 6px; }
+    .month-nav .month-label { font-size: 0.85rem; min-width: 120px; }
+  }
+  @media(max-width: 400px) {
+    .cards { grid-template-columns: 1fr; }
+  }
 
   /* PANEL */
   .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
@@ -216,37 +241,43 @@
 </head>
 <body>
 
-<!-- LOCK SCREEN -->
-<div id="lock-screen">
-  <div class="lock-card" id="lock-card">
+<!-- AUTH SCREEN -->
+<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;">
+  <div class="lock-card">
     <div class="lock-logo">💰</div>
-    <div class="lock-title" id="lock-title">FinControl</div>
-    <div class="lock-subtitle" id="lock-subtitle">Introduce tu contraseña para acceder</div>
-    <div class="lock-input-wrap">
-      <input type="password" id="lock-input" placeholder="Contraseña" autocomplete="current-password"
-        onkeydown="if(event.key==='Enter') lockAction()">
-      <button class="eye-btn" onclick="toggleEye()" id="eye-btn" type="button">👁</button>
-    </div>
-    <div id="lock-confirm-wrap" style="display:none" class="lock-input-wrap">
-      <input type="password" id="lock-confirm" placeholder="Confirmar contraseña"
-        onkeydown="if(event.key==='Enter') lockAction()">
-    </div>
-    <button class="lock-btn" onclick="lockAction()" id="lock-btn">Entrar</button>
-    <div class="lock-error" id="lock-error"></div>
-    <div class="lock-attempts" id="lock-attempts"></div>
-    <div class="lock-footer">🔒 Tus datos se guardan solo en este dispositivo</div>
+    <div class="lock-title">FinControl</div>
+    <div class="lock-subtitle">Accede con tu cuenta de Google para sincronizar tus datos entre todos tus dispositivos</div>
+    <button class="lock-btn" id="google-btn" onclick="signInWithGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#333;border:1px solid #ddd;">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Continuar con Google
+    </button>
+    <div id="auth-error" style="color:var(--red);font-size:0.83rem;margin-top:12px;min-height:18px;text-align:center"></div>
+    <div class="lock-footer">🔒 Tus datos se guardan de forma privada y segura en tu cuenta</div>
   </div>
 </div>
 
+<!-- LOADING SCREEN -->
+<div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:9998;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+  <div style="font-size:3rem">💰</div>
+  <div style="color:var(--text2);font-size:0.9rem">Cargando tus datos...</div>
+  <div style="width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite"></div>
+</div>
+
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
 <nav>
   <div class="logo"><span>💰</span> FinControl</div>
-  <button onclick="showSection('dashboard')" id="nav-dashboard" class="active">Dashboard</button>
-  <button onclick="showSection('transacciones')" id="nav-transacciones">Transacciones</button>
-  <button onclick="showSection('presupuesto')" id="nav-presupuesto">Presupuesto</button>
-  <button onclick="showSection('ahorro')" id="nav-ahorro">Ahorro</button>
-  <button onclick="showSection('analisis')" id="nav-analisis">Análisis</button>
+  <button class="nav-btn" onclick="showSection('dashboard')" id="nav-dashboard" class="active">Dashboard</button>
+  <button class="nav-btn" onclick="showSection('transacciones')" id="nav-transacciones">Transacciones</button>
+  <button class="nav-btn" onclick="showSection('presupuesto')" id="nav-presupuesto">Presupuesto</button>
+  <button class="nav-btn" onclick="showSection('ahorro')" id="nav-ahorro">Ahorro</button>
+  <button class="nav-btn" onclick="showSection('analisis')" id="nav-analisis">Análisis</button>
+  <div class="nav-user" id="nav-user" style="display:none">
+    <img id="nav-avatar" src="" alt="">
+    <span id="nav-name"></span>
+  </div>
   <button class="nav-lock-btn" onclick="openSettings()" title="Configuración">⚙️</button>
-  <button class="nav-lock-btn" onclick="lockApp()" title="Bloquear app">🔒</button>
+  <button class="nav-lock-btn" onclick="signOutUser()" title="Cerrar sesión">🚪</button>
 </nav>
 
 <!-- MODAL CONFIGURACIÓN -->
@@ -277,19 +308,8 @@
       </div>
     </div>
 
-    <div class="form-group" style="margin-bottom:20px;padding-top:16px;border-top:1px solid var(--border)">
-      <label style="font-size:0.9rem;color:var(--text);margin-bottom:8px;display:block">🔑 Cambiar contraseña</label>
-      <div class="lock-input-wrap" style="margin-bottom:8px">
-        <input type="password" id="cfg-pw-current" placeholder="Contraseña actual">
-      </div>
-      <div class="lock-input-wrap" style="margin-bottom:8px">
-        <input type="password" id="cfg-pw-new" placeholder="Nueva contraseña (mín. 4 caracteres)">
-      </div>
-      <div class="lock-input-wrap">
-        <input type="password" id="cfg-pw-confirm" placeholder="Confirmar nueva contraseña">
-      </div>
-      <div id="cfg-pw-msg" style="font-size:0.82rem;margin-top:8px;min-height:18px"></div>
-      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="changePassword()">Actualizar contraseña</button>
+    <div style="padding-top:16px;border-top:1px solid var(--border);font-size:0.83rem;color:var(--text2)">
+      🔐 Sesión gestionada por Google. Para cerrar sesión usa el botón 🚪 de la barra superior.
     </div>
 
     <div class="modal-footer">
@@ -570,12 +590,7 @@ let budgetMonth = null; // se inicializa en initApp()
 let activeGoalId = null;
 let charts = {};
 
-// ─── PERSIST ───────────────────────────────────────────
-function save() { localStorage.setItem('fincontrol_v2', JSON.stringify(state)); }
-function load() {
-  const raw = localStorage.getItem('fincontrol_v2');
-  if (raw) state = JSON.parse(raw);
-}
+// ─── PERSIST: gestionado por Firebase (ver bloque Firebase más abajo) ───
 
 // ─── UTILS ──────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -630,17 +645,26 @@ function getPeriodStartDate(periodKey) {
 }
 
 // Devuelve { start, end } del periodo 'YYYY-MM'
+// El periodo termina cuando llega el siguiente salario.
+// Si aún no se ha registrado, el periodo sigue abierto → end = hoy.
 function getPayPeriodBounds(periodKey) {
   const [y, m] = periodKey.split('-').map(Number);
   const start = getPeriodStartDate(periodKey);
-  // Fin = día anterior al inicio del periodo siguiente
   const nm = m === 12 ? 1 : m + 1;
   const ny = m === 12 ? y + 1 : y;
-  const nextKey = `${ny}-${String(nm).padStart(2,'0')}`;
-  const nextStart = getPeriodStartDate(nextKey);
-  const endDate = new Date(nextStart);
-  endDate.setDate(endDate.getDate() - 1);
-  return { start, end: endDate.toISOString().slice(0,10) };
+  // ¿Ya hay salario registrado el mes siguiente?
+  const nextSalaryReal = getSalaryDateInMonth(ny, nm);
+  let end;
+  if (nextSalaryReal) {
+    // Termina el día antes de cobrar el siguiente mes
+    const endDate = new Date(nextSalaryReal);
+    endDate.setDate(endDate.getDate() - 1);
+    end = endDate.toISOString().slice(0,10);
+  } else {
+    // Periodo aún abierto → termina hoy
+    end = new Date().toISOString().slice(0,10);
+  }
+  return { start, end };
 }
 
 // Periodo activo: el que contiene la fecha de hoy
@@ -743,6 +767,7 @@ function populateCatSelect(elId, type) {
     o.value = c.id; o.textContent = c.icon + ' ' + c.label;
     el.appendChild(o);
   });
+  if (elId === 'tx-cat') el.onchange = onCatChange;
 }
 
 function populateFilterCat() {
@@ -755,29 +780,54 @@ function populateFilterCat() {
   });
 }
 
+function onCatChange() {
+  const cat  = document.getElementById('tx-cat').value;
+  const desc = document.getElementById('tx-desc');
+  // Auto-rellenar descripción solo si está vacía
+  if (cat === 'salario' && !desc.value.trim()) {
+    const now = new Date();
+    desc.value = `Nómina ${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+  } else if (cat === 'freelance' && !desc.value.trim()) {
+    desc.value = 'Ingreso freelance';
+  }
+}
+
 function addTransaction() {
-  const desc   = document.getElementById('tx-desc').value.trim();
-  const amount = parseFloat(document.getElementById('tx-amount').value);
   const cat    = document.getElementById('tx-cat').value;
+  let   desc   = document.getElementById('tx-desc').value.trim();
+  const amount = parseFloat(document.getElementById('tx-amount').value);
   const date   = document.getElementById('tx-date').value;
   const note   = document.getElementById('tx-note').value.trim();
 
-  if (!desc) return alert('Añade una descripción.');
+  // Para salario, descripción es opcional (auto-generada si está vacía)
+  if (!desc) {
+    if (cat === 'salario') {
+      const now = new Date();
+      desc = `Nómina ${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()}`;
+    } else {
+      return alert('Añade una descripción.');
+    }
+  }
   if (!amount || amount <= 0) return alert('El importe debe ser mayor que 0.');
   if (!date) return alert('Selecciona una fecha.');
 
-  state.transactions.unshift({ id: uid(), type: currentTxType, desc, amount, cat, date, note });
-  save();
+  const tx = { id: uid(), type: currentTxType, desc, amount, cat, date, note };
+  state.transactions.unshift(tx);
+  fbSaveTx(tx);
   document.getElementById('tx-desc').value = '';
   document.getElementById('tx-amount').value = '';
   document.getElementById('tx-note').value = '';
+  // Refrescar periodo filter por si cambió
+  populatePeriodFilter();
   renderTransactions();
+  // Si es salario, refrescar dashboard para actualizar periodo
+  if (cat === 'salario') { budgetMonth = getActivePeriodKey(); renderDashboard(); }
 }
 
 function deleteTransaction(id) {
   if (!confirm('¿Eliminar esta transacción?')) return;
   state.transactions = state.transactions.filter(t=>t.id!==id);
-  save();
+  fbDeleteTx(id);
   renderTransactions();
 }
 
@@ -854,10 +904,11 @@ function importCSV(e) {
       const type = tipo==='Ingreso'?'income':'expense';
       const catInfo = ALL_CATS.find(c=>c.label===catLabel) || ALL_CATS[ALL_CATS.length-1];
       if (!date||!desc||!amount) return;
-      state.transactions.push({ id:uid(), type, desc, amount:parseFloat(amount)||0, cat:catInfo.id, date, note:note||'' });
+      const tx = { id:uid(), type, desc, amount:parseFloat(amount)||0, cat:catInfo.id, date, note:note||'' };
+      state.transactions.push(tx);
+      fbSaveTx(tx);
       added++;
     });
-    save();
     renderTransactions();
     alert(`Se importaron ${added} transacciones.`);
   };
@@ -882,15 +933,28 @@ function saveBudgets() {
     const val = el ? parseFloat(el.value) || 0 : 0;
     state.budgets[budgetMonth][c.id] = val;
   });
-  save();
+  fbSaveBudget(budgetMonth);
   renderBudget();
 }
 
 function renderBudget() {
-  document.getElementById('budget-month-label').textContent = getPeriodLabel(budgetMonth, true);
+  if (!budgetMonth) budgetMonth = getActivePeriodKey();
+
+  try {
+    document.getElementById('budget-month-label').textContent = getPeriodLabel(budgetMonth, true);
+  } catch(e) {
+    document.getElementById('budget-month-label').textContent = budgetMonth;
+  }
 
   const budget = state.budgets[budgetMonth] || {};
-  const { start, end } = getPayPeriodBounds(budgetMonth);
+  let start, end;
+  try {
+    ({ start, end } = getPayPeriodBounds(budgetMonth));
+  } catch(e) {
+    // Fallback: mes natural completo
+    start = budgetMonth + '-01';
+    end   = budgetMonth + '-31';
+  }
   const txs = state.transactions.filter(t => t.date >= start && t.date <= end && t.type==='expense');
 
   // FORM
@@ -952,8 +1016,9 @@ function addGoal() {
   if (!name) return alert('Ponle un nombre al objetivo.');
   if (!target || target <= 0) return alert('Define un importe objetivo mayor que 0.');
 
-  state.goals.push({ id: uid(), name, emoji, target, saved, deadline, createdAt: new Date().toISOString().slice(0,10) });
-  save();
+  const goal = { id: uid(), name, emoji, target, saved, deadline, createdAt: new Date().toISOString().slice(0,10) };
+  state.goals.push(goal);
+  fbSaveGoal(goal);
   document.getElementById('goal-name').value = '';
   document.getElementById('goal-emoji').value = '';
   document.getElementById('goal-target').value = '';
@@ -965,7 +1030,7 @@ function addGoal() {
 function deleteGoal(id) {
   if (!confirm('¿Eliminar este objetivo?')) return;
   state.goals = state.goals.filter(g=>g.id!==id);
-  save();
+  fbDeleteGoal(id);
   renderSavings();
 }
 
@@ -983,7 +1048,7 @@ function confirmContribute() {
   const amount = parseFloat(document.getElementById('contribute-amount').value);
   if (!amount || amount <= 0) return alert('Introduce una cantidad válida.');
   const goal = state.goals.find(g=>g.id===contributeGoalId);
-  if (goal) { goal.saved = Math.min(goal.saved + amount, goal.target); save(); }
+  if (goal) { goal.saved = Math.min(goal.saved + amount, goal.target); fbSaveGoal(goal); }
   closeModal();
   renderSavings();
 }
@@ -1235,137 +1300,99 @@ function destroyChart(id) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  SEGURIDAD — LOGIN / LOCK
+//  FIREBASE — AUTH + FIRESTORE
 // ═══════════════════════════════════════════════════════
-const PASS_KEY    = 'fincontrol_pass_hash';
-const SALT        = 'fincontrol_v2_salt_8x2';
-const MAX_TRIES   = 5;
-const LOCK_AFTER  = 5 * 60 * 1000; // 5 minutos inactividad
-let failedAttempts = 0;
-let lockTimer = null;
-let sessionUnlocked = false;
+const firebaseConfig = {
+  apiKey: "AIzaSyA4d4LhzZK8UCPU3xwVmvVPaYiIAbOi6SA",
+  authDomain: "fincontrol-a8778.firebaseapp.com",
+  projectId: "fincontrol-a8778",
+  storageBucket: "fincontrol-a8778.firebasestorage.app",
+  messagingSenderId: "576593132075",
+  appId: "1:576593132075:web:16482b09bc738fd7c3c86e"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+let currentUser = null;
 
-async function hashPass(pw) {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest('SHA-256', enc.encode(pw + SALT));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+function signInWithGoogle() {
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('google-btn').disabled = true;
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(() => {
+    document.getElementById('auth-error').textContent = 'Error al iniciar sesión. Inténtalo de nuevo.';
+    document.getElementById('google-btn').disabled = false;
+  });
+}
+function signOutUser() {
+  if (confirm('¿Cerrar sesión en FinControl?')) auth.signOut();
+}
+function showLoading(v) {
+  document.getElementById('loading-screen').style.display = v ? 'flex' : 'none';
 }
 
-function showLockScreen(setup = false) {
-  const screen = document.getElementById('lock-screen');
-  screen.classList.add('visible');
-  document.getElementById('lock-input').value = '';
-  document.getElementById('lock-confirm').value = '';
-  document.getElementById('lock-error').textContent = '';
-  document.getElementById('lock-attempts').textContent = '';
-  if (setup) {
-    document.getElementById('lock-title').textContent = 'Crear contraseña';
-    document.getElementById('lock-subtitle').textContent = 'Es la primera vez que abres FinControl.\nElige una contraseña para proteger tus datos.';
-    document.getElementById('lock-btn').textContent = 'Crear contraseña';
-    document.getElementById('lock-confirm-wrap').style.display = 'block';
-  } else {
-    document.getElementById('lock-title').textContent = 'FinControl';
-    document.getElementById('lock-subtitle').textContent = 'Introduce tu contraseña para acceder';
-    document.getElementById('lock-btn').textContent = 'Entrar';
-    document.getElementById('lock-confirm-wrap').style.display = 'none';
-  }
-  setTimeout(()=>document.getElementById('lock-input').focus(), 100);
-}
-
-function hideLockScreen() {
-  document.getElementById('lock-screen').classList.remove('visible');
-  sessionUnlocked = true;
-  resetLockTimer();
-}
-
-async function lockAction() {
-  const stored = localStorage.getItem(PASS_KEY);
-  const pw = document.getElementById('lock-input').value;
-  const errEl = document.getElementById('lock-error');
-  const attEl = document.getElementById('lock-attempts');
-  errEl.textContent = '';
-
-  if (!pw) { errEl.textContent = 'Introduce una contraseña.'; return; }
-
-  if (!stored) {
-    // SETUP MODE
-    const confirm = document.getElementById('lock-confirm').value;
-    if (pw.length < 4) { errEl.textContent = 'La contraseña debe tener al menos 4 caracteres.'; return; }
-    if (pw !== confirm) {
-      errEl.textContent = 'Las contraseñas no coinciden.';
-      document.getElementById('lock-card').classList.add('lock-shake');
-      setTimeout(()=>document.getElementById('lock-card').classList.remove('lock-shake'), 400);
-      return;
-    }
-    const hash = await hashPass(pw);
-    localStorage.setItem(PASS_KEY, hash);
-    hideLockScreen();
+auth.onAuthStateChanged(async user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('auth-screen').style.display = 'none';
+    showLoading(true);
+    document.getElementById('nav-avatar').src = user.photoURL || '';
+    document.getElementById('nav-name').textContent = (user.displayName||'').split(' ')[0];
+    document.getElementById('nav-user').style.display = 'flex';
+    await loadFromFirestore(user.uid);
+    showLoading(false);
     initApp();
   } else {
-    // LOGIN MODE
-    if (failedAttempts >= MAX_TRIES) {
-      errEl.textContent = `Demasiados intentos. Espera 30 segundos.`;
-      return;
-    }
-    const hash = await hashPass(pw);
-    if (hash === stored) {
-      failedAttempts = 0;
-      attEl.textContent = '';
-      hideLockScreen();
-    } else {
-      failedAttempts++;
-      document.getElementById('lock-card').classList.add('lock-shake');
-      setTimeout(()=>document.getElementById('lock-card').classList.remove('lock-shake'), 400);
-      document.getElementById('lock-input').value = '';
-      if (failedAttempts >= MAX_TRIES) {
-        errEl.textContent = 'Demasiados intentos fallidos.';
-        attEl.textContent = 'Espera 30 segundos...';
-        setTimeout(()=>{ failedAttempts = 0; attEl.textContent=''; errEl.textContent=''; }, 30000);
-      } else {
-        errEl.textContent = 'Contraseña incorrecta.';
-        attEl.textContent = `Intentos restantes: ${MAX_TRIES - failedAttempts}`;
-      }
-    }
+    currentUser = null;
+    showLoading(false);
+    document.getElementById('nav-user').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('google-btn').disabled = false;
+  }
+});
+
+function userPath(sub) { return `users/${currentUser.uid}/${sub}`; }
+
+async function loadFromFirestore(uid) {
+  try {
+    const [txSnap, budgetSnap, goalSnap, settingsDoc] = await Promise.all([
+      db.collection(`users/${uid}/transactions`).get(),
+      db.collection(`users/${uid}/budgets`).get(),
+      db.collection(`users/${uid}/goals`).get(),
+      db.doc(`users/${uid}/settings/config`).get()
+    ]);
+    state.transactions = txSnap.docs.map(d=>d.data()).sort((a,b)=>b.date.localeCompare(a.date));
+    state.budgets = {};
+    budgetSnap.docs.forEach(d => { state.budgets[d.id] = d.data(); });
+    state.goals = goalSnap.docs.map(d=>d.data());
+    state.settings = settingsDoc.exists ? { payDayType:'penultimate', ...settingsDoc.data() } : { payDayType:'penultimate' };
+  } catch(e) {
+    console.error('Error cargando datos:', e);
+    state.settings = { payDayType: 'penultimate' };
   }
 }
 
-function lockApp() {
-  sessionUnlocked = false;
-  clearTimeout(lockTimer);
-  showLockScreen(false);
-}
+function save() {} // no-op: cada mutación guarda directamente en Firestore
+function load() {}
 
-function resetLockTimer() {
-  clearTimeout(lockTimer);
-  lockTimer = setTimeout(()=>{ if(sessionUnlocked) lockApp(); }, LOCK_AFTER);
-}
+function fbSaveTx(tx)         { if(currentUser) db.doc(userPath(`transactions/${tx.id}`)).set(tx).catch(console.error); }
+function fbDeleteTx(id)       { if(currentUser) db.doc(userPath(`transactions/${id}`)).delete().catch(console.error); }
+function fbSaveBudget(key)    { if(currentUser) db.doc(userPath(`budgets/${key}`)).set(state.budgets[key]||{}).catch(console.error); }
+function fbSaveGoal(goal)     { if(currentUser) db.doc(userPath(`goals/${goal.id}`)).set(goal).catch(console.error); }
+function fbDeleteGoal(id)     { if(currentUser) db.doc(userPath(`goals/${id}`)).delete().catch(console.error); }
+function fbSaveSettings()     { if(currentUser) db.doc(userPath('settings/config')).set(state.settings).catch(console.error); }
 
-function toggleEye() {
-  const inp = document.getElementById('lock-input');
-  const btn = document.getElementById('eye-btn');
-  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
-  else { inp.type = 'password'; btn.textContent = '👁'; }
-}
+// Placeholder para que el código antiguo no rompa
+async function hashPass(pw) { return pw; }
 
-// Resetear timer con cualquier interacción
-['click','keydown','touchstart','scroll'].forEach(ev =>
-  document.addEventListener(ev, ()=>{ if(sessionUnlocked) resetLockTimer(); }, {passive:true})
-);
 
 // ═══════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ═══════════════════════════════════════════════════════
 function openSettings() {
   const type = (state.settings && state.settings.payDayType) || 'penultimate';
-  // Actualizar botones fallback
   document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'       ? ' active-income' : '');
   document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate' ? ' active-income' : '');
-  // Mostrar periodos detectados
   renderDetectedPeriods();
-  document.getElementById('cfg-pw-current').value = '';
-  document.getElementById('cfg-pw-new').value = '';
-  document.getElementById('cfg-pw-confirm').value = '';
-  document.getElementById('cfg-pw-msg').textContent = '';
   document.getElementById('modal-settings').classList.add('open');
 }
 
@@ -1400,66 +1427,41 @@ function setPayDayType(type) {
   document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate'  ? ' active-income' : '');
   if (!state.settings) state.settings = {};
   state.settings.payDayType = type;
-  save();
+  fbSaveSettings();
   renderDashboard();
-}
-
-async function changePassword() {
-  const current = document.getElementById('cfg-pw-current').value;
-  const newPw   = document.getElementById('cfg-pw-new').value;
-  const confirm = document.getElementById('cfg-pw-confirm').value;
-  const msgEl   = document.getElementById('cfg-pw-msg');
-
-  const stored = localStorage.getItem(PASS_KEY);
-  const curHash = await hashPass(current);
-  if (curHash !== stored) { msgEl.style.color='var(--red)'; msgEl.textContent='La contraseña actual no es correcta.'; return; }
-  if (newPw.length < 4)   { msgEl.style.color='var(--red)'; msgEl.textContent='La nueva contraseña debe tener al menos 4 caracteres.'; return; }
-  if (newPw !== confirm)  { msgEl.style.color='var(--red)'; msgEl.textContent='Las contraseñas no coinciden.'; return; }
-
-  const newHash = await hashPass(newPw);
-  localStorage.setItem(PASS_KEY, newHash);
-  msgEl.style.color='var(--green)'; msgEl.textContent='✅ Contraseña actualizada correctamente.';
-  document.getElementById('cfg-pw-current').value = '';
-  document.getElementById('cfg-pw-new').value = '';
-  document.getElementById('cfg-pw-confirm').value = '';
 }
 
 // ─── SERVICE WORKER ──────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
 
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
 function initApp() {
-  load();
-  // Asegurarse de que settings existe (para datos guardados antes de esta versión)
   if (!state.settings) state.settings = { payDayType: 'penultimate' };
-
   budgetMonth = getActivePeriodKey();
-
   document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
-  // Populate period selector for transactions filter
   populatePeriodFilter();
   populateCatSelect('tx-cat', 'expense');
   populateFilterCat();
+  // Marcar Dashboard como activo
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('dashboard').classList.add('active');
+  document.getElementById('nav-dashboard').classList.add('active');
   renderDashboard();
 }
 
 function populatePeriodFilter() {
   const el = document.getElementById('filter-month');
-  // Sustituir input[type=month] por select con periodos
   const sel = document.createElement('select');
   sel.id = 'filter-month';
-  sel.style.cssText = el.style.cssText;
   sel.className = el.className;
   const opt0 = document.createElement('option');
   opt0.value = ''; opt0.textContent = 'Todos los periodos';
   sel.appendChild(opt0);
-  // Últimos 12 periodos
   const cur = getActivePeriodKey();
   const [cy, cm] = cur.split('-').map(Number);
   for (let i = 11; i >= 0; i--) {
@@ -1474,16 +1476,9 @@ function populatePeriodFilter() {
   el.parentNode.replaceChild(sel, el);
 }
 
-function init() {
-  const stored = localStorage.getItem(PASS_KEY);
-  if (!stored) {
-    showLockScreen(true);   // primera vez: crear contraseña
-  } else {
-    showLockScreen(false);  // visita normal: pedir contraseña
-  }
-}
-
-init();
+// Arranque: Firebase onAuthStateChanged gestiona todo
+// mostrar pantalla de auth mientras se comprueba sesión
+document.getElementById('auth-screen').style.display = 'flex';
 </script>
 </body>
 </html>
