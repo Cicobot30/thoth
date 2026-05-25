@@ -1,0 +1,21 @@
+{
+  "name": "FinControl — Finanzas personales",
+  "short_name": "FinControl",
+  "description": "Controla tus gastos, presupuesto y ahorro personal",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1117",
+  "theme_color": "#6c63ff",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%236c63ff'/%3E%3Ctext y='340' x='100' font-size='320' font-family='serif'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity"],
+  "screenshots": []
+}
