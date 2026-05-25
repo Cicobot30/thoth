@@ -255,18 +255,26 @@
     <h3>⚙️ Configuración</h3>
 
     <div class="form-group" style="margin-bottom:20px">
-      <label style="font-size:0.9rem;color:var(--text);margin-bottom:10px;display:block">
-        📅 ¿Cuándo cobras tu nómina?
+      <label style="font-size:0.9rem;color:var(--text);margin-bottom:8px;display:block">
+        💰 Detección automática de periodos por salario
       </label>
-      <div style="display:flex;gap:10px">
-        <button id="cfg-last" class="type-btn" onclick="setPayDayType('last')" style="flex:1;padding:12px 8px">
-          Último día laborable
+      <div style="font-size:0.83rem;color:var(--text2);background:var(--bg3);padding:12px 14px;border-radius:8px;line-height:1.8;margin-bottom:12px">
+        Cuando registres tu nómina con la categoría <strong style="color:var(--accent2)">💼 Salario</strong>, esa fecha
+        se convierte automáticamente en el inicio del periodo siguiente.<br>
+        <span style="color:var(--text3)">Ej: cobras el 26 de mayo → empieza "Junio 2026" ese día.</span>
+      </div>
+      <div id="cfg-periods-detected" style="font-size:0.82rem;line-height:1.8"></div>
+      <div style="margin-top:10px;font-size:0.8rem;color:var(--text3)">
+        Fallback si no hay salario registrado:
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button id="cfg-last" class="type-btn" onclick="setPayDayType('last')" style="flex:1;padding:9px 6px;font-size:0.8rem">
+          Último día lab.
         </button>
-        <button id="cfg-penultimate" class="type-btn" onclick="setPayDayType('penultimate')" style="flex:1;padding:12px 8px">
-          Penúltimo día laborable
+        <button id="cfg-penultimate" class="type-btn" onclick="setPayDayType('penultimate')" style="flex:1;padding:9px 6px;font-size:0.8rem">
+          Penúltimo día lab.
         </button>
       </div>
-      <div id="cfg-preview" style="margin-top:12px;font-size:0.82rem;color:var(--text2);background:var(--bg3);padding:10px 14px;border-radius:8px;line-height:1.7"></div>
     </div>
 
     <div class="form-group" style="margin-bottom:20px;padding-top:16px;border-top:1px solid var(--border)">
@@ -583,77 +591,102 @@ function fmtDate(d) {
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
 // ─── PERIODOS DE PAGO ───────────────────────────────────
-// Devuelve la fecha de cobro de un mes dado (último o penúltimo día laborable)
+// LÓGICA: el periodo 'YYYY-MM' empieza cuando se registra el salario
+// del mes anterior (cat === 'salario'). Si no hay salario registrado,
+// se usa como fallback el penúltimo día laborable del mes anterior.
+
+// Fallback: penúltimo/último día laborable del mes dado
 function getPayDate(year, month) {
   const type = (state.settings && state.settings.payDayType) || 'penultimate';
-  // Último día del mes
   let date = new Date(year, month, 0);
-  // Retroceder hasta día laborable (lunes-viernes)
   while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
   if (type === 'last') return new Date(date);
-  // Penúltimo: retroceder un día laborable más
   date.setDate(date.getDate() - 1);
   while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
   return new Date(date);
 }
 
-// Devuelve las fechas inicio/fin del periodo 'YYYY-MM'
-// El periodo 'YYYY-MM' empieza en la fecha de cobro del mes anterior
-// y termina el día antes de la fecha de cobro de 'YYYY-MM'
-function getPayPeriodBounds(periodKey) {
+// Busca la fecha del salario registrado en un mes natural concreto.
+// Si hay varias transacciones de salario ese mes, devuelve la primera (la del cobro).
+function getSalaryDateInMonth(year, month) {
+  const prefix = `${year}-${String(month).padStart(2,'0')}`;
+  const hits = state.transactions.filter(t =>
+    t.type === 'income' && t.cat === 'salario' && t.date.startsWith(prefix)
+  ).sort((a, b) => a.date.localeCompare(b.date));
+  return hits.length > 0 ? hits[0].date : null;
+}
+
+// Devuelve la fecha de inicio del periodo 'YYYY-MM'.
+// El periodo 'Junio' arranca cuando cobras en mayo → buscamos salario de mayo.
+function getPeriodStartDate(periodKey) {
   const [y, m] = periodKey.split('-').map(Number);
   const prevM = m === 1 ? 12 : m - 1;
   const prevY = m === 1 ? y - 1 : y;
-  const start = getPayDate(prevY, prevM);
-  const end   = getPayDate(y, m);
-  end.setDate(end.getDate() - 1);
-  return {
-    start: start.toISOString().slice(0,10),
-    end:   end.toISOString().slice(0,10)
-  };
+  // ① Salario real registrado el mes anterior
+  const real = getSalaryDateInMonth(prevY, prevM);
+  if (real) return real;
+  // ② Fallback: día laborable calculado
+  return getPayDate(prevY, prevM).toISOString().slice(0,10);
 }
 
-// Devuelve el periodo activo actual ('YYYY-MM')
+// Devuelve { start, end } del periodo 'YYYY-MM'
+function getPayPeriodBounds(periodKey) {
+  const [y, m] = periodKey.split('-').map(Number);
+  const start = getPeriodStartDate(periodKey);
+  // Fin = día anterior al inicio del periodo siguiente
+  const nm = m === 12 ? 1 : m + 1;
+  const ny = m === 12 ? y + 1 : y;
+  const nextKey = `${ny}-${String(nm).padStart(2,'0')}`;
+  const nextStart = getPeriodStartDate(nextKey);
+  const endDate = new Date(nextStart);
+  endDate.setDate(endDate.getDate() - 1);
+  return { start, end: endDate.toISOString().slice(0,10) };
+}
+
+// Periodo activo: el que contiene la fecha de hoy
 function getActivePeriodKey() {
   const today = new Date().toISOString().slice(0,10);
   const now   = new Date();
   const y = now.getFullYear(), m = now.getMonth() + 1;
-  const payStr = getPayDate(y, m).toISOString().slice(0,10);
-  if (today >= payStr) {
+
+  // ¿Hay salario registrado este mes antes o en la fecha de hoy?
+  const salaryThisMonth = getSalaryDateInMonth(y, m);
+  if (salaryThisMonth && salaryThisMonth <= today) {
+    // Ya cobré → empieza el periodo del mes siguiente
     const nm = m === 12 ? 1 : m + 1;
     const ny = m === 12 ? y + 1 : y;
     return `${ny}-${String(nm).padStart(2,'0')}`;
   }
+  // Todavía no he cobrado → sigo en el periodo de este mes
   return `${y}-${String(m).padStart(2,'0')}`;
 }
 
-// Determina a qué periodo pertenece una transacción
+// ¿A qué periodo pertenece una transacción?
 function getTxPeriodKey(tx) {
   const d = tx.date;
   const [ty, tm] = d.split('-').map(Number);
-  // Comprobar el periodo del mes natural
-  const k1 = `${ty}-${String(tm).padStart(2,'0')}`;
-  const b1 = getPayPeriodBounds(k1);
-  if (d >= b1.start && d <= b1.end) return k1;
-  // Comprobar el periodo del mes siguiente
-  const nm = tm === 12 ? 1 : tm + 1;
-  const ny = tm === 12 ? ty + 1 : ty;
-  const k2 = `${ny}-${String(nm).padStart(2,'0')}`;
-  const b2 = getPayPeriodBounds(k2);
-  if (d >= b2.start && d <= b2.end) return k2;
-  return k1;
+  // Comprobamos el periodo del mes natural y el siguiente
+  for (const [ym, yy] of [[tm, ty], [tm===12?1:tm+1, tm===12?ty+1:ty]]) {
+    const key = `${yy}-${String(ym).padStart(2,'0')}`;
+    const { start, end } = getPayPeriodBounds(key);
+    if (d >= start && d <= end) return key;
+  }
+  return `${ty}-${String(tm).padStart(2,'0')}`;
 }
 
-// Compatibilidad: alias antiguo para código que filtre por mes
 function getTxMonth(tx) { return getTxPeriodKey(tx); }
 
-// Etiqueta legible de un periodo con rango de fechas
+// Etiqueta legible: "Junio 2026" o "Junio 2026 (26 May – 24 Jun)"
 function getPeriodLabel(periodKey, withDates = false) {
   const [y, m] = periodKey.split('-').map(Number);
   const name = `${MONTH_NAMES[m-1]} ${y}`;
   if (!withDates) return name;
   const { start, end } = getPayPeriodBounds(periodKey);
-  return `${name}  (${fmtDate(start)} – ${fmtDate(end)})`;
+  const salaryReal = getSalaryDateInMonth(
+    m===1?y-1:y, m===1?12:m-1
+  );
+  const tag = salaryReal ? ' 💰' : ' 📅';
+  return `${name}${tag}  (${fmtDate(start)} – ${fmtDate(end)})`;
 }
 
 function periodTotals(periodKey) {
@@ -664,7 +697,6 @@ function periodTotals(periodKey) {
   return { income, expense, balance: income - expense };
 }
 
-// Alias para compatibilidad
 function monthTotals(key) { return periodTotals(key); }
 
 function last6Periods() {
@@ -1325,8 +1357,11 @@ function toggleEye() {
 // ═══════════════════════════════════════════════════════
 function openSettings() {
   const type = (state.settings && state.settings.payDayType) || 'penultimate';
-  setPayDayType(type, false); // actualiza botones sin guardar
-  updateCfgPreview();
+  // Actualizar botones fallback
+  document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'       ? ' active-income' : '');
+  document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate' ? ' active-income' : '');
+  // Mostrar periodos detectados
+  renderDetectedPeriods();
   document.getElementById('cfg-pw-current').value = '';
   document.getElementById('cfg-pw-new').value = '';
   document.getElementById('cfg-pw-confirm').value = '';
@@ -1334,34 +1369,39 @@ function openSettings() {
   document.getElementById('modal-settings').classList.add('open');
 }
 
+function renderDetectedPeriods() {
+  const el = document.getElementById('cfg-periods-detected');
+  const periods = last6Periods();
+  let html = '';
+  let detected = 0;
+  periods.forEach(key => {
+    const [y, m] = key.split('-').map(Number);
+    const prevM = m===1?12:m-1, prevY = m===1?y-1:y;
+    const real = getSalaryDateInMonth(prevY, prevM);
+    if (real) {
+      detected++;
+      html += `<span style="color:var(--green)">💰 ${MONTH_NAMES[m-1]} ${y}: cobro detectado el ${fmtDate(real)}</span><br>`;
+    } else {
+      html += `<span style="color:var(--text3)">📅 ${MONTH_NAMES[m-1]} ${y}: sin salario registrado (usando fallback)</span><br>`;
+    }
+  });
+  if (detected === 0) {
+    html = `<div class="alert alert-info" style="margin:0">Aún no has registrado ningún salario. Añade tu nómina como ingreso con categoría <strong>💼 Salario</strong> y los periodos se ajustarán automáticamente.</div>`;
+  }
+  el.innerHTML = html;
+}
+
 function closeSettings() {
   document.getElementById('modal-settings').classList.remove('open');
 }
 
-function setPayDayType(type, doSave = true) {
+function setPayDayType(type) {
   document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'        ? ' active-income' : '');
   document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate'  ? ' active-income' : '');
   if (!state.settings) state.settings = {};
   state.settings.payDayType = type;
-  if (doSave) { save(); updateCfgPreview(); renderDashboard(); }
-  else updateCfgPreview();
-}
-
-function updateCfgPreview() {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth() + 1;
-  // Mostrar los próximos 3 meses de cobro
-  let html = '<strong style="color:var(--text2)">Próximas fechas de cobro:</strong><br>';
-  for (let i = 0; i < 3; i++) {
-    const cm = ((m - 1 + i) % 12) + 1;
-    const cy = y + Math.floor((m - 1 + i) / 12);
-    const pd = getPayDate(cy, cm);
-    const periodName = cm === 12
-      ? `${MONTH_NAMES[0]} ${cy+1}`
-      : `${MONTH_NAMES[cm]} ${cy}`;
-    html += `📅 <strong>${pd.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})}</strong> → empieza <em>${periodName}</em><br>`;
-  }
-  document.getElementById('cfg-preview').innerHTML = html;
+  save();
+  renderDashboard();
 }
 
 async function changePassword() {
