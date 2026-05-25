@@ -245,8 +245,50 @@
   <button onclick="showSection('presupuesto')" id="nav-presupuesto">Presupuesto</button>
   <button onclick="showSection('ahorro')" id="nav-ahorro">Ahorro</button>
   <button onclick="showSection('analisis')" id="nav-analisis">Análisis</button>
+  <button class="nav-lock-btn" onclick="openSettings()" title="Configuración">⚙️</button>
   <button class="nav-lock-btn" onclick="lockApp()" title="Bloquear app">🔒</button>
 </nav>
+
+<!-- MODAL CONFIGURACIÓN -->
+<div class="modal-bg" id="modal-settings">
+  <div class="modal">
+    <h3>⚙️ Configuración</h3>
+
+    <div class="form-group" style="margin-bottom:20px">
+      <label style="font-size:0.9rem;color:var(--text);margin-bottom:10px;display:block">
+        📅 ¿Cuándo cobras tu nómina?
+      </label>
+      <div style="display:flex;gap:10px">
+        <button id="cfg-last" class="type-btn" onclick="setPayDayType('last')" style="flex:1;padding:12px 8px">
+          Último día laborable
+        </button>
+        <button id="cfg-penultimate" class="type-btn" onclick="setPayDayType('penultimate')" style="flex:1;padding:12px 8px">
+          Penúltimo día laborable
+        </button>
+      </div>
+      <div id="cfg-preview" style="margin-top:12px;font-size:0.82rem;color:var(--text2);background:var(--bg3);padding:10px 14px;border-radius:8px;line-height:1.7"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-size:0.9rem;color:var(--text);margin-bottom:8px;display:block">🔑 Cambiar contraseña</label>
+      <div class="lock-input-wrap" style="margin-bottom:8px">
+        <input type="password" id="cfg-pw-current" placeholder="Contraseña actual">
+      </div>
+      <div class="lock-input-wrap" style="margin-bottom:8px">
+        <input type="password" id="cfg-pw-new" placeholder="Nueva contraseña (mín. 4 caracteres)">
+      </div>
+      <div class="lock-input-wrap">
+        <input type="password" id="cfg-pw-confirm" placeholder="Confirmar nueva contraseña">
+      </div>
+      <div id="cfg-pw-msg" style="font-size:0.82rem;margin-top:8px;min-height:18px"></div>
+      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="changePassword()">Actualizar contraseña</button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" style="background:var(--bg3);border:1px solid var(--border);color:var(--text)" onclick="closeSettings()">Cerrar</button>
+    </div>
+  </div>
+</div>
 
 <main>
 
@@ -320,9 +362,9 @@
     <div class="panel">
       <h3>Filtrar transacciones</h3>
       <div class="form-row">
-        <div class="form-group">
-          <label>Mes</label>
-          <input type="month" id="filter-month">
+        <div class="form-group" style="flex:2">
+          <label>Periodo</label>
+          <select id="filter-month"></select>
         </div>
         <div class="form-group">
           <label>Tipo</label>
@@ -510,10 +552,13 @@ let state = {
   transactions: [],  // { id, type, desc, amount, cat, date, note }
   budgets: {},       // { 'YYYY-MM': { catId: limit } }
   goals: [],         // { id, name, emoji, target, saved, deadline, createdAt }
+  settings: {
+    payDayType: 'penultimate', // 'last' | 'penultimate'
+  }
 };
 
 let currentTxType = 'expense';
-let budgetMonth = getThisMonth();
+let budgetMonth = null; // se inicializa en initApp()
 let activeGoalId = null;
 let charts = {};
 
@@ -537,24 +582,103 @@ function fmtDate(d) {
   const p = d.split('-');
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
-function getTxMonth(tx) { return tx.date.slice(0,7); }
+// ─── PERIODOS DE PAGO ───────────────────────────────────
+// Devuelve la fecha de cobro de un mes dado (último o penúltimo día laborable)
+function getPayDate(year, month) {
+  const type = (state.settings && state.settings.payDayType) || 'penultimate';
+  // Último día del mes
+  let date = new Date(year, month, 0);
+  // Retroceder hasta día laborable (lunes-viernes)
+  while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
+  if (type === 'last') return new Date(date);
+  // Penúltimo: retroceder un día laborable más
+  date.setDate(date.getDate() - 1);
+  while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
+  return new Date(date);
+}
 
-function monthTotals(month) {
-  const txs = state.transactions.filter(t => getTxMonth(t) === month);
+// Devuelve las fechas inicio/fin del periodo 'YYYY-MM'
+// El periodo 'YYYY-MM' empieza en la fecha de cobro del mes anterior
+// y termina el día antes de la fecha de cobro de 'YYYY-MM'
+function getPayPeriodBounds(periodKey) {
+  const [y, m] = periodKey.split('-').map(Number);
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevY = m === 1 ? y - 1 : y;
+  const start = getPayDate(prevY, prevM);
+  const end   = getPayDate(y, m);
+  end.setDate(end.getDate() - 1);
+  return {
+    start: start.toISOString().slice(0,10),
+    end:   end.toISOString().slice(0,10)
+  };
+}
+
+// Devuelve el periodo activo actual ('YYYY-MM')
+function getActivePeriodKey() {
+  const today = new Date().toISOString().slice(0,10);
+  const now   = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  const payStr = getPayDate(y, m).toISOString().slice(0,10);
+  if (today >= payStr) {
+    const nm = m === 12 ? 1 : m + 1;
+    const ny = m === 12 ? y + 1 : y;
+    return `${ny}-${String(nm).padStart(2,'0')}`;
+  }
+  return `${y}-${String(m).padStart(2,'0')}`;
+}
+
+// Determina a qué periodo pertenece una transacción
+function getTxPeriodKey(tx) {
+  const d = tx.date;
+  const [ty, tm] = d.split('-').map(Number);
+  // Comprobar el periodo del mes natural
+  const k1 = `${ty}-${String(tm).padStart(2,'0')}`;
+  const b1 = getPayPeriodBounds(k1);
+  if (d >= b1.start && d <= b1.end) return k1;
+  // Comprobar el periodo del mes siguiente
+  const nm = tm === 12 ? 1 : tm + 1;
+  const ny = tm === 12 ? ty + 1 : ty;
+  const k2 = `${ny}-${String(nm).padStart(2,'0')}`;
+  const b2 = getPayPeriodBounds(k2);
+  if (d >= b2.start && d <= b2.end) return k2;
+  return k1;
+}
+
+// Compatibilidad: alias antiguo para código que filtre por mes
+function getTxMonth(tx) { return getTxPeriodKey(tx); }
+
+// Etiqueta legible de un periodo con rango de fechas
+function getPeriodLabel(periodKey, withDates = false) {
+  const [y, m] = periodKey.split('-').map(Number);
+  const name = `${MONTH_NAMES[m-1]} ${y}`;
+  if (!withDates) return name;
+  const { start, end } = getPayPeriodBounds(periodKey);
+  return `${name}  (${fmtDate(start)} – ${fmtDate(end)})`;
+}
+
+function periodTotals(periodKey) {
+  const { start, end } = getPayPeriodBounds(periodKey);
+  const txs = state.transactions.filter(t => t.date >= start && t.date <= end);
   const income  = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount, 0);
   const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount, 0);
   return { income, expense, balance: income - expense };
 }
 
-function last6Months() {
-  const months = [];
-  const now = new Date();
+// Alias para compatibilidad
+function monthTotals(key) { return periodTotals(key); }
+
+function last6Periods() {
+  const keys = [];
+  const cur = getActivePeriodKey();
+  const [cy, cm] = cur.split('-').map(Number);
   for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+    const d = new Date(cy, cm - 1 - i, 1);
+    keys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
   }
-  return months;
+  return keys;
 }
+
+function last6Months() { return last6Periods(); }
 
 // ─── NAVIGATION ─────────────────────────────────────────
 function showSection(id) {
@@ -638,7 +762,7 @@ function renderTransactions() {
   const fCat   = document.getElementById('filter-cat').value;
 
   let txs = [...state.transactions];
-  if (fMonth) txs = txs.filter(t => getTxMonth(t) === fMonth);
+  if (fMonth) txs = txs.filter(t => getTxPeriodKey(t) === fMonth);
   if (fType)  txs = txs.filter(t => t.type === fType);
   if (fCat)   txs = txs.filter(t => t.cat === fCat);
   txs.sort((a,b)=>b.date.localeCompare(a.date));
@@ -731,11 +855,11 @@ function saveBudgets() {
 }
 
 function renderBudget() {
-  const [y,m] = budgetMonth.split('-').map(Number);
-  document.getElementById('budget-month-label').textContent = `${MONTH_NAMES[m-1]} ${y}`;
+  document.getElementById('budget-month-label').textContent = getPeriodLabel(budgetMonth, true);
 
   const budget = state.budgets[budgetMonth] || {};
-  const txs = state.transactions.filter(t => getTxMonth(t)===budgetMonth && t.type==='expense');
+  const { start, end } = getPayPeriodBounds(budgetMonth);
+  const txs = state.transactions.filter(t => t.date >= start && t.date <= end && t.type==='expense');
 
   // FORM
   const formEl = document.getElementById('budget-form-items');
@@ -844,8 +968,8 @@ function calcMonthlySavingsNeeded(goal) {
 
 function renderSavings() {
   // Suggestion box
-  const thisMonth = getThisMonth();
-  const { income, expense, balance } = monthTotals(thisMonth);
+  const thisMonth = getActivePeriodKey();
+  const { income, expense, balance } = periodTotals(thisMonth);
   const sugBox = document.getElementById('savings-suggestion-box');
 
   if (income > 0) {
@@ -913,10 +1037,9 @@ function renderSavings() {
 //  DASHBOARD
 // ═══════════════════════════════════════════════════════
 function renderDashboard() {
-  const thisMonth = getThisMonth();
-  const { income, expense, balance } = monthTotals(thisMonth);
-  const [y,m] = thisMonth.split('-').map(Number);
-  document.getElementById('dash-subtitle').textContent = `Resumen de ${MONTH_NAMES[m-1]} ${y}`;
+  const thisMonth = getActivePeriodKey();
+  const { income, expense, balance } = periodTotals(thisMonth);
+  document.getElementById('dash-subtitle').textContent = `Resumen de ${getPeriodLabel(thisMonth, true)}`;
 
   // Cards
   const totalSaved = state.goals.reduce((s,g)=>s+g.saved, 0);
@@ -980,10 +1103,10 @@ function renderDashboard() {
   charts['chart-evo'] = new Chart(document.getElementById('chart-evo'), {
     type: 'line',
     data: {
-      labels: months6.map(m=>{ const [y,mo]=m.split('-').map(Number); return MONTH_NAMES[mo-1].slice(0,3)+' '+y; }),
+      labels: months6.map(k=>getPeriodLabel(k)),
       datasets: [
-        { label:'Ingresos', data: months6.map(m=>monthTotals(m).income), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#10b981', borderWidth:2 },
-        { label:'Gastos',   data: months6.map(m=>monthTotals(m).expense), borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#ef4444', borderWidth:2 }
+        { label:'Ingresos', data: months6.map(k=>periodTotals(k).income), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#10b981', borderWidth:2 },
+        { label:'Gastos',   data: months6.map(k=>periodTotals(k).expense), borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#ef4444', borderWidth:2 }
       ]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{color:'#94a3b8'} } }, scales:{ x:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
@@ -1007,8 +1130,8 @@ function renderDashboard() {
 // ═══════════════════════════════════════════════════════
 function renderAnalysis() {
   const thisYear = new Date().getFullYear().toString();
-  const months6 = last6Months();
-  const thisMonth = getThisMonth();
+  const months6 = last6Periods();
+  const thisMonth = getActivePeriodKey();
 
   // Cards anuales
   const yearTxs = state.transactions.filter(t=>t.date.startsWith(thisYear));
@@ -1045,28 +1168,30 @@ function renderAnalysis() {
   charts['chart-bar'] = new Chart(document.getElementById('chart-bar'), {
     type: 'bar',
     data: {
-      labels: months6.map(m=>{ const [y,mo]=m.split('-').map(Number); return MONTH_NAMES[mo-1].slice(0,3); }),
+      labels: months6.map(k=>getPeriodLabel(k)),
       datasets: [
-        { label:'Ingresos', data: months6.map(m=>monthTotals(m).income), backgroundColor:'rgba(16,185,129,0.7)', borderRadius:6 },
-        { label:'Gastos',   data: months6.map(m=>monthTotals(m).expense), backgroundColor:'rgba(239,68,68,0.7)', borderRadius:6 }
+        { label:'Ingresos', data: months6.map(k=>periodTotals(k).income), backgroundColor:'rgba(16,185,129,0.7)', borderRadius:6 },
+        { label:'Gastos',   data: months6.map(k=>periodTotals(k).expense), backgroundColor:'rgba(239,68,68,0.7)', borderRadius:6 }
       ]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{labels:{color:'#94a3b8'}} }, scales:{ x:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
   });
 
-  // Daily chart
-  const [y,m] = thisMonth.split('-').map(Number);
-  const daysInMonth = new Date(y,m,0).getDate();
-  const days = Array.from({length:daysInMonth},(_,i)=>String(i+1).padStart(2,'0'));
-  const dailyData = days.map(d=>{
-    const dateStr = `${thisMonth}-${d}`;
-    return state.transactions.filter(t=>t.date===dateStr&&t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  });
+  // Daily chart — gasto diario dentro del periodo activo
+  const { start: pStart, end: pEnd } = getPayPeriodBounds(thisMonth);
+  const days = [];
+  let cur = new Date(pStart);
+  const endD = new Date(pEnd);
+  while (cur <= endD) { days.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+  const dailyData = days.map(dateStr =>
+    state.transactions.filter(t=>t.date===dateStr&&t.type==='expense').reduce((s,t)=>s+t.amount,0)
+  );
+  const dayLabels = days.map(d=>{ const p=d.split('-'); return `${p[2]}/${p[1]}`; });
   destroyChart('chart-daily');
   charts['chart-daily'] = new Chart(document.getElementById('chart-daily'), {
     type: 'bar',
     data: {
-      labels: days.map(d=>parseInt(d)),
+      labels: dayLabels,
       datasets: [{ label:'Gasto (€)', data: dailyData, backgroundColor:'rgba(108,99,255,0.6)', borderRadius:4 }]
     },
     options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#64748b'},grid:{display:false}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
@@ -1195,6 +1320,70 @@ function toggleEye() {
   document.addEventListener(ev, ()=>{ if(sessionUnlocked) resetLockTimer(); }, {passive:true})
 );
 
+// ═══════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ═══════════════════════════════════════════════════════
+function openSettings() {
+  const type = (state.settings && state.settings.payDayType) || 'penultimate';
+  setPayDayType(type, false); // actualiza botones sin guardar
+  updateCfgPreview();
+  document.getElementById('cfg-pw-current').value = '';
+  document.getElementById('cfg-pw-new').value = '';
+  document.getElementById('cfg-pw-confirm').value = '';
+  document.getElementById('cfg-pw-msg').textContent = '';
+  document.getElementById('modal-settings').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('modal-settings').classList.remove('open');
+}
+
+function setPayDayType(type, doSave = true) {
+  document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'        ? ' active-income' : '');
+  document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate'  ? ' active-income' : '');
+  if (!state.settings) state.settings = {};
+  state.settings.payDayType = type;
+  if (doSave) { save(); updateCfgPreview(); renderDashboard(); }
+  else updateCfgPreview();
+}
+
+function updateCfgPreview() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth() + 1;
+  // Mostrar los próximos 3 meses de cobro
+  let html = '<strong style="color:var(--text2)">Próximas fechas de cobro:</strong><br>';
+  for (let i = 0; i < 3; i++) {
+    const cm = ((m - 1 + i) % 12) + 1;
+    const cy = y + Math.floor((m - 1 + i) / 12);
+    const pd = getPayDate(cy, cm);
+    const periodName = cm === 12
+      ? `${MONTH_NAMES[0]} ${cy+1}`
+      : `${MONTH_NAMES[cm]} ${cy}`;
+    html += `📅 <strong>${pd.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'})}</strong> → empieza <em>${periodName}</em><br>`;
+  }
+  document.getElementById('cfg-preview').innerHTML = html;
+}
+
+async function changePassword() {
+  const current = document.getElementById('cfg-pw-current').value;
+  const newPw   = document.getElementById('cfg-pw-new').value;
+  const confirm = document.getElementById('cfg-pw-confirm').value;
+  const msgEl   = document.getElementById('cfg-pw-msg');
+
+  const stored = localStorage.getItem(PASS_KEY);
+  const curHash = await hashPass(current);
+  if (curHash !== stored) { msgEl.style.color='var(--red)'; msgEl.textContent='La contraseña actual no es correcta.'; return; }
+  if (newPw.length < 4)   { msgEl.style.color='var(--red)'; msgEl.textContent='La nueva contraseña debe tener al menos 4 caracteres.'; return; }
+  if (newPw !== confirm)  { msgEl.style.color='var(--red)'; msgEl.textContent='Las contraseñas no coinciden.'; return; }
+
+  const newHash = await hashPass(newPw);
+  localStorage.setItem(PASS_KEY, newHash);
+  msgEl.style.color='var(--green)'; msgEl.textContent='✅ Contraseña actualizada correctamente.';
+  document.getElementById('cfg-pw-current').value = '';
+  document.getElementById('cfg-pw-new').value = '';
+  document.getElementById('cfg-pw-confirm').value = '';
+}
+
 // ─── SERVICE WORKER ──────────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -1207,11 +1396,42 @@ if ('serviceWorker' in navigator) {
 // ═══════════════════════════════════════════════════════
 function initApp() {
   load();
+  // Asegurarse de que settings existe (para datos guardados antes de esta versión)
+  if (!state.settings) state.settings = { payDayType: 'penultimate' };
+
+  budgetMonth = getActivePeriodKey();
+
   document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
-  document.getElementById('filter-month').value = getThisMonth();
+  // Populate period selector for transactions filter
+  populatePeriodFilter();
   populateCatSelect('tx-cat', 'expense');
   populateFilterCat();
   renderDashboard();
+}
+
+function populatePeriodFilter() {
+  const el = document.getElementById('filter-month');
+  // Sustituir input[type=month] por select con periodos
+  const sel = document.createElement('select');
+  sel.id = 'filter-month';
+  sel.style.cssText = el.style.cssText;
+  sel.className = el.className;
+  const opt0 = document.createElement('option');
+  opt0.value = ''; opt0.textContent = 'Todos los periodos';
+  sel.appendChild(opt0);
+  // Últimos 12 periodos
+  const cur = getActivePeriodKey();
+  const [cy, cm] = cur.split('-').map(Number);
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(cy, cm - 1 - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = getPeriodLabel(key, true);
+    if (key === cur) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  el.parentNode.replaceChild(sel, el);
 }
 
 function init() {
