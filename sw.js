@@ -1,7 +1,7 @@
 // FinControl — Service Worker
 // Permite usar la app sin conexión a internet
 
-const CACHE = 'fincontrol-v1';
+const CACHE = 'fincontrol-v2';
 const ASSETS = [
   './',
   './index.html',
