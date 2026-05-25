@@ -1211,4 +1211,577 @@ function renderSavings() {
         <h3>💡 Tu capacidad de ahorro este mes</h3>
         <p>Con <strong style="color:var(--text)">${formatMoney(income)}</strong> de ingresos y <strong style="color:var(--text)">${formatMoney(expense)}</strong> de gastos,
         tu <strong>margen libre es <span class="highlight">${sugRate}</span></strong>
-        (${sugPct}% de tus ingresos
+        (${sugPct}% de tus ingresos).</p>
+        ${balance > 0
+          ? `<p style="margin-top:8px">📌 <strong>Regla 50/30/20 sugerida:</strong>
+             Necesidades (<strong>${formatMoney(income*0.5)}</strong>) ·
+             Deseos (<strong>${formatMoney(income*0.3)}</strong>) ·
+             Ahorro (<strong style="color:var(--green)">${formatMoney(income*0.2)}</strong>)</p>`
+          : `<p style="margin-top:8px;color:var(--red)">⚠️ Este mes tus gastos superan tus ingresos. Revisa el presupuesto para recuperar margen.</p>`
+        }
+      </div>`;
+  } else {
+    sugBox.innerHTML = `<div class="alert alert-info">💡 Añade tus ingresos en Transacciones para que la app calcule tu capacidad de ahorro.</div>`;
+  }
+
+  // Goals list
+  const listEl = document.getElementById('goals-list');
+  if (state.goals.length === 0) {
+    listEl.innerHTML = '<div class="empty"><div class="icon">🎯</div>Aún no tienes objetivos. ¡Crea el primero!</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  state.goals.forEach(goal => {
+    const pct = Math.min((goal.saved/goal.target)*100, 100);
+    const color = pct>=100?'pf-green':pct>=60?'pf-purple':pct>=30?'pf-yellow':'pf-red';
+    const monthly = calcMonthlySavingsNeeded(goal);
+    const remaining = goal.target - goal.saved;
+
+    const div = document.createElement('div');
+    div.className = 'goal-card';
+    div.innerHTML = `
+      <div class="goal-header">
+        <div>
+          <span class="goal-emoji">${goal.emoji}</span>
+          <span class="goal-name" style="margin-left:8px">${goal.name}</span>
+          ${pct>=100?'<span class="badge badge-income" style="margin-left:8px">✅ Completado</span>':''}
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="deleteGoal('${goal.id}')">✕</button>
+      </div>
+      <div class="goal-meta">
+        <strong style="color:var(--text)">${formatMoney(goal.saved)}</strong> de <strong style="color:var(--text)">${formatMoney(goal.target)}</strong>
+        ${goal.deadline?` · Fecha: ${fmtDate(goal.deadline)}`:''}
+        ${monthly!==null && pct<100?` · <span style="color:var(--accent2)">Necesitas ${formatMoney(monthly)}/mes</span>`:''}
+      </div>
+      <div class="progress-bar"><div class="progress-fill ${color}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <span style="font-size:0.78rem;color:var(--text3)">${pct.toFixed(1)}% completado · Falta ${formatMoney(Math.max(0,remaining))}</span>
+        ${pct<100?`<button class="btn btn-success btn-sm" onclick="openContribute('${goal.id}')">+ Abonar</button>`:''}
+      </div>
+    `;
+    listEl.appendChild(div);
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════
+function renderDashboard() {
+  const thisMonth = getActivePeriodKey();
+  const { income, expense, balance } = periodTotals(thisMonth);
+  document.getElementById('dash-subtitle').textContent = `Resumen de ${getPeriodLabel(thisMonth, true)}`;
+
+  // Cards
+  const totalSaved = state.goals.reduce((s,g)=>s+g.saved, 0);
+  document.getElementById('dash-cards').innerHTML = `
+    <div class="card green">
+      <div class="label">Ingresos este mes</div>
+      <div class="value">${formatMoney(income)}</div>
+      <div class="sub">${state.transactions.filter(t=>t.type==='income'&&getTxMonth(t)===thisMonth).length} transacciones</div>
+    </div>
+    <div class="card red">
+      <div class="label">Gastos este mes</div>
+      <div class="value">${formatMoney(expense)}</div>
+      <div class="sub">${state.transactions.filter(t=>t.type==='expense'&&getTxMonth(t)===thisMonth).length} transacciones</div>
+    </div>
+    <div class="card ${balance>=0?'purple':'red'}">
+      <div class="label">Balance del mes</div>
+      <div class="value">${formatMoney(balance)}</div>
+      <div class="sub">${balance>=0?'Superávit ✅':'Déficit ⚠️'}</div>
+    </div>
+    <div class="card blue">
+      <div class="label">Ahorro acumulado</div>
+      <div class="value">${formatMoney(totalSaved)}</div>
+      <div class="sub">${state.goals.length} objetivo${state.goals.length!==1?'s':''}</div>
+    </div>
+  `;
+
+  // Suggestion
+  const sugEl = document.getElementById('dash-suggestion');
+  if (income > 0 && balance > 0) {
+    const pct = Math.round((balance/income)*100);
+    sugEl.innerHTML = `<div class="alert alert-${pct>=20?'success':'warn'}">
+      💡 Este mes puedes ahorrar <strong>${formatMoney(balance)}</strong> (${pct}% de tus ingresos).
+      ${pct<20?'Para alcanzar el 20% recomendado deberías reducir gastos en <strong>'+formatMoney(income*0.2-balance)+'</strong>.':'¡Buen trabajo! Estás por encima de la regla del 20% de ahorro.'}
+    </div>`;
+  } else { sugEl.innerHTML = ''; }
+
+  // Chart gastos por categoría
+  const txsMonth = state.transactions.filter(t=>getTxMonth(t)===thisMonth && t.type==='expense');
+  const catMap = {};
+  txsMonth.forEach(t=>{ catMap[t.cat]=(catMap[t.cat]||0)+t.amount; });
+  const catEntries = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const colors = ['#6c63ff','#10b981','#f59e0b','#3b82f6','#ef4444','#a78bfa','#06b6d4','#ec4899','#84cc16','#f97316','#8b5cf6','#14b8a6'];
+
+  destroyChart('chart-cat');
+  if (catEntries.length > 0) {
+    charts['chart-cat'] = new Chart(document.getElementById('chart-cat'), {
+      type: 'doughnut',
+      data: {
+        labels: catEntries.map(([k])=>getCatInfo(k).icon+' '+getCatInfo(k).label),
+        datasets: [{ data: catEntries.map(([,v])=>v), backgroundColor: colors, borderWidth: 0 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'right', labels:{ color:'#94a3b8', font:{size:11} } } } }
+    });
+  } else {
+    document.getElementById('chart-cat').parentElement.innerHTML = '<div class="empty"><div class="icon">📊</div>Sin gastos este mes</div>';
+  }
+
+  // Chart evolución mensual
+  const months6 = last6Months();
+  destroyChart('chart-evo');
+  charts['chart-evo'] = new Chart(document.getElementById('chart-evo'), {
+    type: 'line',
+    data: {
+      labels: months6.map(k=>getPeriodLabel(k)),
+      datasets: [
+        { label:'Ingresos', data: months6.map(k=>periodTotals(k).income), borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#10b981', borderWidth:2 },
+        { label:'Gastos',   data: months6.map(k=>periodTotals(k).expense), borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.1)', tension:0.4, fill:true, pointBackgroundColor:'#ef4444', borderWidth:2 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{color:'#94a3b8'} } }, scales:{ x:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
+  });
+
+  // Recent transactions
+  const recent = [...state.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  const el = document.getElementById('recent-list');
+  if (recent.length===0) { el.innerHTML='<div class="empty"><div class="icon">📭</div>Sin transacciones aún</div>'; return; }
+  let html = '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th style="text-align:right">Importe</th></tr></thead><tbody>';
+  recent.forEach(tx=>{
+    const cat=getCatInfo(tx.cat);
+    html+=`<tr><td style="color:var(--text2)">${fmtDate(tx.date)}</td><td>${tx.desc}</td><td>${cat.icon} ${cat.label}</td>
+      <td style="text-align:right;font-weight:700;color:${tx.type==='income'?'var(--green)':'var(--red)'}">${tx.type==='income'?'+':'-'}${formatMoney(tx.amount)}</td></tr>`;
+  });
+  el.innerHTML = html + '</tbody></table></div>';
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANÁLISIS
+// ═══════════════════════════════════════════════════════
+function renderAnalysis() {
+  const thisYear = new Date().getFullYear().toString();
+  const months6 = last6Periods();
+  const thisMonth = getActivePeriodKey();
+
+  // Cards anuales
+  const yearTxs = state.transactions.filter(t=>t.date.startsWith(thisYear));
+  const yearInc = yearTxs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const yearExp = yearTxs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const avgMonthlyExp = yearExp / (new Date().getMonth()+1);
+  document.getElementById('analisis-cards').innerHTML = `
+    <div class="card green"><div class="label">Ingresos ${thisYear}</div><div class="value">${formatMoney(yearInc)}</div></div>
+    <div class="card red"><div class="label">Gastos ${thisYear}</div><div class="value">${formatMoney(yearExp)}</div></div>
+    <div class="card purple"><div class="label">Balance ${thisYear}</div><div class="value">${formatMoney(yearInc-yearExp)}</div></div>
+    <div class="card blue"><div class="label">Gasto medio/mes</div><div class="value">${formatMoney(avgMonthlyExp)}</div></div>
+  `;
+
+  // Donut categorías año
+  const yearExp2 = yearTxs.filter(t=>t.type==='expense');
+  const catMap2 = {};
+  yearExp2.forEach(t=>{ catMap2[t.cat]=(catMap2[t.cat]||0)+t.amount; });
+  const catEntries2 = Object.entries(catMap2).sort((a,b)=>b[1]-a[1]);
+  const colors2 = ['#6c63ff','#10b981','#f59e0b','#3b82f6','#ef4444','#a78bfa','#06b6d4','#ec4899','#84cc16','#f97316','#8b5cf6','#14b8a6'];
+  destroyChart('chart-donut');
+  if (catEntries2.length>0) {
+    charts['chart-donut'] = new Chart(document.getElementById('chart-donut'), {
+      type: 'doughnut',
+      data: {
+        labels: catEntries2.map(([k])=>getCatInfo(k).icon+' '+getCatInfo(k).label),
+        datasets: [{ data: catEntries2.map(([,v])=>v), backgroundColor: colors2, borderWidth:0 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'right', labels:{color:'#94a3b8',font:{size:11}} } } }
+    });
+  }
+
+  // Bar ingresos vs gastos
+  destroyChart('chart-bar');
+  charts['chart-bar'] = new Chart(document.getElementById('chart-bar'), {
+    type: 'bar',
+    data: {
+      labels: months6.map(k=>getPeriodLabel(k)),
+      datasets: [
+        { label:'Ingresos', data: months6.map(k=>periodTotals(k).income), backgroundColor:'rgba(16,185,129,0.7)', borderRadius:6 },
+        { label:'Gastos',   data: months6.map(k=>periodTotals(k).expense), backgroundColor:'rgba(239,68,68,0.7)', borderRadius:6 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{labels:{color:'#94a3b8'}} }, scales:{ x:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
+  });
+
+  // Daily chart — gasto diario dentro del periodo activo
+  const { start: pStart, end: pEnd } = getPayPeriodBounds(thisMonth);
+  const days = [];
+  let cur = new Date(pStart);
+  const endD = new Date(pEnd);
+  while (cur <= endD) { days.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+  const dailyData = days.map(dateStr =>
+    state.transactions.filter(t=>t.date===dateStr&&t.type==='expense').reduce((s,t)=>s+t.amount,0)
+  );
+  const dayLabels = days.map(d=>{ const p=d.split('-'); return `${p[2]}/${p[1]}`; });
+  destroyChart('chart-daily');
+  charts['chart-daily'] = new Chart(document.getElementById('chart-daily'), {
+    type: 'bar',
+    data: {
+      labels: dayLabels,
+      datasets: [{ label:'Gasto (€)', data: dailyData, backgroundColor:'rgba(108,99,255,0.6)', borderRadius:4 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#64748b'},grid:{display:false}}, y:{ticks:{color:'#64748b'},grid:{color:'#2e3350'}} } }
+  });
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+// ═══════════════════════════════════════════════════════
+//  FIREBASE — AUTH + FIRESTORE
+// ═══════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyA4d4LhzZK8UCPU3xwVmvVPaYiIAbOi6SA",
+  authDomain: "fincontrol-a8778.firebaseapp.com",
+  projectId: "fincontrol-a8778",
+  storageBucket: "fincontrol-a8778.firebasestorage.app",
+  messagingSenderId: "576593132075",
+  appId: "1:576593132075:web:16482b09bc738fd7c3c86e"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+let currentUser = null;
+
+function signInWithGoogle() {
+  document.getElementById('auth-error').textContent = '';
+  document.getElementById('google-btn').disabled = true;
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(() => {
+    document.getElementById('auth-error').textContent = 'Error al iniciar sesión. Inténtalo de nuevo.';
+    document.getElementById('google-btn').disabled = false;
+  });
+}
+function signOutUser() {
+  if (confirm('¿Cerrar sesión en Thoth?')) auth.signOut();
+}
+function showLoading(v) {
+  document.getElementById('loading-screen').style.display = v ? 'flex' : 'none';
+}
+
+auth.onAuthStateChanged(async user => {
+  if (user) {
+    currentUser = user;
+    document.getElementById('auth-screen').style.display = 'none';
+    showLoading(true);
+    document.getElementById('nav-avatar').src = user.photoURL || '';
+    document.getElementById('nav-name').textContent = (user.displayName||'').split(' ')[0];
+    document.getElementById('nav-user').style.display = 'flex';
+    await loadFromFirestore(user.uid);
+    showLoading(false);
+    initApp();
+  } else {
+    currentUser = null;
+    showLoading(false);
+    document.getElementById('nav-user').style.display = 'none';
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('google-btn').disabled = false;
+  }
+});
+
+function userPath(sub) { return `users/${currentUser.uid}/${sub}`; }
+
+async function loadFromFirestore(uid) {
+  try {
+    const [txSnap, budgetSnap, goalSnap, settingsDoc, recurringSnap] = await Promise.all([
+      db.collection(`users/${uid}/transactions`).get(),
+      db.collection(`users/${uid}/budgets`).get(),
+      db.collection(`users/${uid}/goals`).get(),
+      db.doc(`users/${uid}/settings/config`).get(),
+      db.collection(`users/${uid}/recurring`).get()
+    ]);
+    state.transactions = txSnap.docs.map(d=>d.data()).sort((a,b)=>b.date.localeCompare(a.date));
+    state.budgets = {};
+    budgetSnap.docs.forEach(d => { state.budgets[d.id] = d.data(); });
+    state.goals = goalSnap.docs.map(d=>d.data());
+    state.recurring = recurringSnap.docs.map(d=>d.data());
+    state.settings = settingsDoc.exists ? { payDayType:'penultimate', ...settingsDoc.data() } : { payDayType:'penultimate' };
+  } catch(e) {
+    console.error('Error cargando datos:', e);
+    state.settings = { payDayType: 'penultimate' };
+  }
+}
+
+function save() {} // no-op: cada mutación guarda directamente en Firestore
+function load() {}
+
+function fbSaveTx(tx)         { if(currentUser) db.doc(userPath(`transactions/${tx.id}`)).set(tx).catch(console.error); }
+function fbDeleteTx(id)       { if(currentUser) db.doc(userPath(`transactions/${id}`)).delete().catch(console.error); }
+function fbSaveBudget(key)    { if(currentUser) db.doc(userPath(`budgets/${key}`)).set(state.budgets[key]||{}).catch(console.error); }
+function fbSaveGoal(goal)     { if(currentUser) db.doc(userPath(`goals/${goal.id}`)).set(goal).catch(console.error); }
+function fbDeleteGoal(id)     { if(currentUser) db.doc(userPath(`goals/${id}`)).delete().catch(console.error); }
+function fbSaveSettings()     { if(currentUser) db.doc(userPath('settings/config')).set(state.settings).catch(console.error); }
+function fbSaveRecurring(r)   { if(currentUser) db.doc(userPath(`recurring/${r.id}`)).set(r).catch(console.error); }
+function fbDeleteRecurring(id){ if(currentUser) db.doc(userPath(`recurring/${id}`)).delete().catch(console.error); }
+
+// Placeholder para que el código antiguo no rompa
+async function hashPass(pw) { return pw; }
+
+
+// ═══════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ═══════════════════════════════════════════════════════
+function openSettings() {
+  const type = (state.settings && state.settings.payDayType) || 'penultimate';
+  document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'       ? ' active-income' : '');
+  document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate' ? ' active-income' : '');
+  renderDetectedPeriods();
+  document.getElementById('modal-settings').classList.add('open');
+}
+
+function renderDetectedPeriods() {
+  const el = document.getElementById('cfg-periods-detected');
+  const periods = last6Periods();
+  let html = '';
+  let detected = 0;
+  periods.forEach(key => {
+    const [y, m] = key.split('-').map(Number);
+    const prevM = m===1?12:m-1, prevY = m===1?y-1:y;
+    const real = getSalaryDateInMonth(prevY, prevM);
+    if (real) {
+      detected++;
+      html += `<span style="color:var(--green)">💰 ${MONTH_NAMES[m-1]} ${y}: cobro detectado el ${fmtDate(real)}</span><br>`;
+    } else {
+      html += `<span style="color:var(--text3)">📅 ${MONTH_NAMES[m-1]} ${y}: sin salario registrado (usando fallback)</span><br>`;
+    }
+  });
+  if (detected === 0) {
+    html = `<div class="alert alert-info" style="margin:0">Aún no has registrado ningún salario. Añade tu nómina como ingreso con categoría <strong>💼 Salario</strong> y los periodos se ajustarán automáticamente.</div>`;
+  }
+  el.innerHTML = html;
+}
+
+function closeSettings() {
+  document.getElementById('modal-settings').classList.remove('open');
+}
+
+function setPayDayType(type) {
+  document.getElementById('cfg-last').className        = 'type-btn' + (type==='last'        ? ' active-income' : '');
+  document.getElementById('cfg-penultimate').className = 'type-btn' + (type==='penultimate'  ? ' active-income' : '');
+  if (!state.settings) state.settings = {};
+  state.settings.payDayType = type;
+  fbSaveSettings();
+  renderDashboard();
+}
+
+// ═══════════════════════════════════════════════════════
+//  GASTOS FIJOS / RECURRENTES
+// ═══════════════════════════════════════════════════════
+
+function addRecurring() {
+  const desc   = document.getElementById('rec-desc').value.trim();
+  const amount = parseFloat(document.getElementById('rec-amount').value);
+  const cat    = document.getElementById('rec-cat').value;
+  const day    = parseInt(document.getElementById('rec-day').value);
+  const start  = document.getElementById('rec-start').value;
+  const end    = document.getElementById('rec-end').value;
+
+  if (!desc)               return alert('Añade una descripción.');
+  if (!amount || amount<=0)return alert('El importe debe ser mayor que 0.');
+  if (!day || day<1||day>31)return alert('El día debe estar entre 1 y 31.');
+  if (!start)              return alert('Indica el mes de inicio.');
+  if (!end)                return alert('Indica el mes de fin.');
+  if (end < start)         return alert('El mes de fin debe ser posterior al de inicio.');
+
+  const r = { id: uid(), desc, amount, cat, dayOfMonth: day, startMonth: start, endMonth: end };
+  state.recurring.push(r);
+  fbSaveRecurring(r);
+
+  // Generar transacciones pasadas y del mes actual
+  generateForTemplate(r, true);
+
+  document.getElementById('rec-desc').value   = '';
+  document.getElementById('rec-amount').value = '';
+  document.getElementById('rec-day').value    = '1';
+  document.getElementById('rec-start').value  = '';
+  document.getElementById('rec-end').value    = '';
+  renderRecurring();
+}
+
+function deleteRecurring(id) {
+  const deleteTxs = confirm('¿Eliminar también las transacciones generadas automáticamente por este gasto fijo?\n\nPulsa Aceptar para eliminarlas, Cancelar para conservarlas.');
+  if (deleteTxs) {
+    const toDelete = state.transactions.filter(t => t.recurringId === id);
+    toDelete.forEach(t => fbDeleteTx(t.id));
+    state.transactions = state.transactions.filter(t => t.recurringId !== id);
+  }
+  state.recurring = state.recurring.filter(r => r.id !== id);
+  fbDeleteRecurring(id);
+  renderRecurring();
+  renderDashboard();
+}
+
+// Genera las transacciones que faltan para una plantilla concreta
+function generateForTemplate(r, saveToFirestore = false) {
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0,10);
+
+  // Iterar desde startMonth hasta min(endMonth, mes actual)
+  const [sy, sm] = r.startMonth.split('-').map(Number);
+  const [ey, em] = r.endMonth.split('-').map(Number);
+  const [ty, tm] = [today.getFullYear(), today.getMonth()+1];
+
+  let y = sy, m = sm;
+  const endY = Math.min(ey, tm < em || ty < ey ? ty : ey);
+  const endM = (ty < ey || (ty === ey && tm < em)) ? tm : em;
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const lastDay  = new Date(y, m, 0).getDate();
+    const day      = Math.min(r.dayOfMonth, lastDay);
+    const dateStr  = `${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+
+    // Solo si no existe ya una tx de esta plantilla en este mes
+    const monthPrefix = `${y}-${String(m).padStart(2,'0')}`;
+    const exists = state.transactions.some(t =>
+      t.recurringId === r.id && t.date.startsWith(monthPrefix)
+    );
+
+    if (!exists && dateStr <= todayStr) {
+      const tx = {
+        id: uid(), type: 'expense',
+        desc: r.desc, amount: r.amount, cat: r.cat,
+        date: dateStr, note: '↻ Gasto fijo automático',
+        recurringId: r.id, autoGenerated: true
+      };
+      state.transactions.unshift(tx);
+      if (saveToFirestore) fbSaveTx(tx);
+    }
+
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  state.transactions.sort((a,b) => b.date.localeCompare(a.date));
+}
+
+// Genera transacciones pendientes para TODAS las plantillas
+function generateAllRecurring() {
+  if (!state.recurring || state.recurring.length === 0) return;
+  state.recurring.forEach(r => generateForTemplate(r, true));
+}
+
+function renderRecurring() {
+  // Populate cat select
+  const catEl = document.getElementById('rec-cat');
+  if (catEl && catEl.options.length === 0) {
+    CATEGORIES.expense.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.icon + ' ' + c.label;
+      catEl.appendChild(o);
+    });
+  }
+
+  // Lista de plantillas
+  const listEl = document.getElementById('recurring-list');
+  if (!state.recurring || state.recurring.length === 0) {
+    listEl.innerHTML = '<div class="empty"><div class="icon">🔄</div>Sin gastos fijos definidos aún</div>';
+  } else {
+    const today = new Date().toISOString().slice(0,10);
+    listEl.innerHTML = '';
+    state.recurring.forEach(r => {
+      const cat  = getCatInfo(r.cat);
+      const active = r.endMonth >= today.slice(0,7);
+      const genCount = state.transactions.filter(t=>t.recurringId===r.id).length;
+      const [ey, em] = r.endMonth.split('-').map(Number);
+      const endLabel = `${MONTH_NAMES[em-1]} ${ey}`;
+      const [sy, sm] = r.startMonth.split('-').map(Number);
+      const startLabel = `${MONTH_NAMES[sm-1]} ${sy}`;
+      const totalMonths = (ey-sy)*12 + (em-sm) + 1;
+      const totalCost = r.amount * totalMonths;
+
+      const div = document.createElement('div');
+      div.className = 'budget-item';
+      div.innerHTML = `
+        <div class="budget-row">
+          <div>
+            <span style="font-weight:600">${cat.icon} ${r.desc}</span>
+            <span class="badge ${active?'badge-income':'badge-expense'}" style="margin-left:8px">${active?'Activo':'Finalizado'}</span>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="deleteRecurring('${r.id}')">✕</button>
+        </div>
+        <div style="font-size:0.82rem;color:var(--text2);margin-top:4px;line-height:1.7">
+          <strong style="color:var(--red)">${formatMoney(r.amount)}/mes</strong> · Día ${r.dayOfMonth} de cada mes<br>
+          ${startLabel} → ${endLabel} · <span style="color:var(--text3)">${totalMonths} meses · ${formatMoney(totalCost)} total</span><br>
+          <span style="color:var(--text3)">↻ ${genCount} transaccion${genCount!==1?'es':'s'} generada${genCount!==1?'s':''}</span>
+        </div>`;
+      listEl.appendChild(div);
+    });
+  }
+
+  // Tabla de transacciones generadas
+  const txEl = document.getElementById('recurring-tx-list');
+  const autoTxs = state.transactions.filter(t=>t.autoGenerated).slice(0,30);
+  if (autoTxs.length === 0) {
+    txEl.innerHTML = '<div class="empty"><div class="icon">📭</div>No hay transacciones automáticas aún</div>';
+    return;
+  }
+  let html = '<table><thead><tr><th>Fecha</th><th>Descripción</th><th>Categoría</th><th style="text-align:right">Importe</th><th></th></tr></thead><tbody>';
+  autoTxs.forEach(tx => {
+    const cat = getCatInfo(tx.cat);
+    html += `<tr>
+      <td style="color:var(--text2)">${fmtDate(tx.date)}</td>
+      <td>${tx.desc} <span style="font-size:0.72rem;color:var(--accent2)">↻</span></td>
+      <td>${cat.icon} ${cat.label}</td>
+      <td style="text-align:right;color:var(--red);font-weight:700">-${formatMoney(tx.amount)}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteTransaction('${tx.id}')">✕</button></td>
+    </tr>`;
+  });
+  txEl.innerHTML = html + '</tbody></table>';
+}
+
+// ─── SERVICE WORKER ──────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+function initApp() {
+  if (!state.settings) state.settings = { payDayType: 'penultimate' };
+  budgetMonth = getActivePeriodKey();
+  document.getElementById('tx-date').value = new Date().toISOString().slice(0,10);
+  populatePeriodFilter();
+  populateCatSelect('tx-cat', 'expense');
+  populateFilterCat();
+  // Marcar Dashboard como activo
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('dashboard').classList.add('active');
+  document.getElementById('nav-dashboard').classList.add('active');
+  renderDashboard();
+  generateAllRecurring();
+}
+
+function populatePeriodFilter() {
+  const el = document.getElementById('filter-month');
+  const sel = document.createElement('select');
+  sel.id = 'filter-month';
+  sel.className = el.className;
+  const opt0 = document.createElement('option');
+  opt0.value = ''; opt0.textContent = 'Todos los periodos';
+  sel.appendChild(opt0);
+  const cur = getActivePeriodKey();
+  const [cy, cm] = cur.split('-').map(Number);
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(cy, cm - 1 - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = getPeriodLabel(key, true);
+    if (key === cur) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  el.parentNode.replaceChild(sel, el);
+}
+
+// Arranque: Firebase onAuthStateChanged gestiona todo
+// mostrar pantalla de auth mientras se comprueba sesión
+document.getElementById('auth-screen').style.display = 'flex';
+</script>
+</body>
+</html>
