@@ -1,10 +1,12 @@
 // Thoth — Service Worker
 // Permite usar la app sin conexión a internet
 
-const CACHE = 'thoth-v1';
+const CACHE = 'thoth-v2';
 const ASSETS = [
   './',
   './index.html',
+  './LOGO_SIMPLE.png',
+  './LOGO_COMPLETO.png',
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
 ];
 
