@@ -283,11 +283,9 @@
 <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center;flex-direction:column;">
   <div class="lock-card">
 
-    <!-- Medallón: ibis dorado sobre círculo cremoso -->
-    <div style="display:flex;justify-content:center;margin-bottom:24px;">
-      <div style="width:150px;height:150px;border-radius:50%;background:#F5F3EE;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(212,175,98,0.3), 0 8px 32px rgba(0,0,0,0.4);">
-        <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:195px;height:195px;object-fit:contain;">
-      </div>
+    <!-- Ibis dorado directo, sin fondo -->
+    <div style="display:flex;justify-content:center;margin-bottom:20px;">
+      <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:200px;height:200px;object-fit:contain;filter:drop-shadow(0 4px 20px rgba(212,175,98,0.25));">
     </div>
 
     <!-- Nombre y tagline en tipografía de la app -->
@@ -314,9 +312,7 @@
 
 <nav>
   <div class="logo">
-    <div style="width:34px;height:34px;border-radius:50%;background:#F5F3EE;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-      <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:46px;height:46px;object-fit:contain;">
-    </div>
+    <img src="LOGO_SIMPLE.png" alt="Thoth" style="height:42px;width:42px;object-fit:contain;flex-shrink:0;">
   </div>
   <button class="nav-btn" onclick="showSection('dashboard')" id="nav-dashboard" class="active">Dashboard</button>
   <button class="nav-btn" onclick="showSection('transacciones')" id="nav-transacciones">Transacciones</button>
