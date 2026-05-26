@@ -285,8 +285,8 @@
 
     <!-- Medallón: ibis dorado sobre círculo cremoso -->
     <div style="display:flex;justify-content:center;margin-bottom:24px;">
-      <div style="width:130px;height:130px;border-radius:50%;background:#F5F3EE;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(212,175,98,0.3), 0 8px 32px rgba(0,0,0,0.4);">
-        <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:90px;height:90px;object-fit:contain;mix-blend-mode:multiply;">
+      <div style="width:150px;height:150px;border-radius:50%;background:#F5F3EE;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1px rgba(212,175,98,0.3), 0 8px 32px rgba(0,0,0,0.4);">
+        <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:195px;height:195px;object-fit:contain;">
       </div>
     </div>
 
@@ -313,7 +313,11 @@
 <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 
 <nav>
-  <div class="logo"><img src="LOGO_SIMPLE.png" alt="Thoth" style="height:32px;"></div>
+  <div class="logo">
+    <div style="width:34px;height:34px;border-radius:50%;background:#F5F3EE;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <img src="LOGO_SIMPLE.png" alt="Thoth" style="width:46px;height:46px;object-fit:contain;">
+    </div>
+  </div>
   <button class="nav-btn" onclick="showSection('dashboard')" id="nav-dashboard" class="active">Dashboard</button>
   <button class="nav-btn" onclick="showSection('transacciones')" id="nav-transacciones">Transacciones</button>
   <button class="nav-btn" onclick="showSection('presupuesto')" id="nav-presupuesto">Presupuesto</button>
